@@ -1,0 +1,6 @@
+@tailwind base;@tailwind components;@tailwind utilities;
+body{background:radial-gradient(1200px 600px at 50% -10%,#3b1766 0%,#07050d 60%) fixed;color:#eee;min-height:100vh}
+input,select{background:#0e0a18;border:1px solid rgba(255,255,255,.12);border-radius:.6rem;padding:.5rem .75rem;width:100%;color:#fff}
+@keyframes flip{to{transform:rotateY(1080deg)}}.animate-flip{animation:flip 1s ease-in-out}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}.animate-pop{animation:pop .25s ease-out}
+@keyframes slide{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}.animate-slide{animation:slide .3s ease-out}
