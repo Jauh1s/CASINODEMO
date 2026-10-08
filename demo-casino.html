@@ -1,0 +1,298 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Royal Demo Casino — DEMO / PLAY MONEY</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>tailwind.config={theme:{extend:{colors:{gold:"#d4af37",ink:"#07050d",plum:"#2a1245"}}}}</script>
+<style>body{background:radial-gradient(1200px 600px at 50% -10%,#3b1766 0%,#07050d 60%) fixed;color:#eee;min-height:100vh}
+input,select{background:#0e0a18;border:1px solid rgba(255,255,255,.12);border-radius:.6rem;padding:.5rem .75rem;width:100%;color:#fff}
+@keyframes flip{to{transform:rotateY(1080deg)}}.animate-flip{animation:flip 1s ease-in-out}
+@keyframes pop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}.animate-pop{animation:pop .25s ease-out}
+@keyframes slide{from{transform:translateY(12px);opacity:0}to{transform:none;opacity:1}}.animate-slide{animation:slide .3s ease-out}
+</style></head><body>
+<div id="root"><p style="text-align:center;padding:4rem;color:#d4af37">Loading casino…</p></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.24.7/babel.min.js"></script>
+<script type="text/plain" id="src">const {useState,useEffect,useRef,createContext,useContext}=React;
+/** Unbiased integer in [0,n) from the browser's CSPRNG (rejection sampling). */
+function rand(n: number): number {
+  const lim = Math.floor(0x100000000 / n) * n, a = new Uint32Array(1);
+  do crypto.getRandomValues(a); while (a[0] >= lim);
+  return a[0] % n;
+}
+function shuffle<T>(x: T[]): T[] {
+  const a = [...x];
+  for (let i = a.length - 1; i > 0; i--) { const j = rand(i + 1); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+const GAMES = [
+  { slug: "slots", title: "Slots", icon: "🎰", desc: "Spin three reels. Match symbols for up to 50×." },
+  { slug: "blackjack", title: "Blackjack", icon: "🃏", desc: "Beat the dealer to 21. Blackjack pays 3:2." },
+  { slug: "roulette", title: "Roulette", icon: "🎡", desc: "European wheel. Colors, parity, halves or a single number." },
+  { slug: "coinflip", title: "Coin Flip", icon: "🪙", desc: "Heads or tails at 1.96×." },
+  { slug: "dice", title: "Dice", icon: "🎲", desc: "Roll over or under. Set your own odds." },
+  { slug: "mines", title: "Mines", icon: "💣", desc: "Uncover gems, dodge mines, cash out anytime." },
+];
+
+type Entry = { id: number; game: string; bet: number; win: number; note: string; t: number };
+type Toast = { id: number; msg: string; ok: boolean };
+type Ctx = { ready: boolean; balance: number; name: string; history: Entry[]; toasts: Toast[];
+  take: (bet: number) => boolean; pay: (game: string, bet: number, payout: number, note: string) => void;
+  reset: () => void; clear: () => void; setName: (n: string) => void; toast: (m: string, ok?: boolean) => void };
+const START = 10000, KEY = "demo-casino-v1";
+const C = createContext<Ctx>(null as unknown as Ctx);
+const useCasino = () => useContext(C);
+
+function Provider({ children }: { children: ReactNode }) {
+  const [ready, setReady] = useState(false), [balance, setBal] = useState(START);
+  const [name, setName] = useState("Guest"), [history, setH] = useState<Entry[]>([]), [toasts, setT] = useState<Toast[]>([]);
+  const bal = useRef(START), id = useRef(1);
+  useEffect(() => {
+    try {
+      const s = JSON.parse(localStorage.getItem(KEY) || "null");
+      if (s) { bal.current = Math.max(0, Math.floor(+s.balance) || 0); setBal(bal.current); setName(s.name || "Guest"); setH(s.history || []); }
+      else setName("Player" + (1000 + Math.floor(Math.random() * 9000)));
+    } catch {}
+    setReady(true);
+  }, []);
+  useEffect(() => { if (ready) localStorage.setItem(KEY, JSON.stringify({ balance, name, history })); }, [ready, balance, name, history]);
+  const toast = (msg: string, ok = true) => {
+    const i = id.current++; setT(t => [...t, { id: i, msg, ok }]);
+    setTimeout(() => setT(t => t.filter(x => x.id !== i)), 3000);
+  };
+  const take = (b: number) => {
+    if (!Number.isInteger(b) || b <= 0) { toast("Enter a valid bet", false); return false; }
+    if (b > bal.current) { toast("Bet exceeds your balance", false); return false; }
+    bal.current -= b; setBal(bal.current); return true;
+  };
+  const pay = (game: string, bet: number, p: number, note: string) => {
+    bal.current += p; setBal(bal.current);
+    const win = p - bet;
+    setH(h => [{ id: Date.now() + Math.random(), game, bet, win, note, t: Date.now() }, ...h].slice(0, 100));
+    toast(win > 0 ? `+${win.toLocaleString()} credits` : win === 0 ? "Push — bet returned" : `-${bet.toLocaleString()} credits`, win >= 0);
+  };
+  const reset = () => { bal.current = START; setBal(START); setH([]); toast("Balance reset to 10,000"); };
+  const clear = () => { setH([]); toast("History cleared"); };
+  return <C.Provider value={{ ready, balance, name, history, toasts, take, pay, reset, clear, setName, toast }}>{children}</C.Provider>;
+}
+function Balance() {
+  const { ready, balance } = useCasino();
+  return ready ? <>{balance.toLocaleString()}</> : <span className="inline-block h-4 w-14 animate-pulse rounded bg-white/20 align-middle" />;
+}
+function Toasts() {
+  const { toasts } = useCasino();
+  return <div className="fixed bottom-4 right-4 z-50 space-y-2">{toasts.map(t =>
+    <div key={t.id} className={`animate-slide rounded-xl border px-4 py-3 text-sm font-semibold shadow-xl ${t.ok ? "border-gold/60 bg-plum text-gold" : "border-red-500/60 bg-red-950 text-red-300"}`}>{t.msg}</div>)}</div>;
+}
+
+const Card = ({ children, className = "" }: { children: ReactNode; className?: string }) =>
+  <div className={`rounded-2xl border border-gold/20 bg-white/[0.04] p-5 backdrop-blur ${className}`}>{children}</div>;
+const Btn = ({ className = "", ...p }: ButtonHTMLAttributes<HTMLButtonElement>) =>
+  <button {...p} className={`rounded-xl bg-gradient-to-b from-gold to-yellow-700 px-4 py-2.5 font-bold text-black transition hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40 ${className}`} />;
+const Chip = ({ on, className = "", ...p }: { on?: boolean } & ButtonHTMLAttributes<HTMLButtonElement>) =>
+  <button {...p} className={`rounded-lg border px-3 py-2 text-sm transition disabled:opacity-40 ${on ? "border-gold bg-gold/20 text-gold" : "border-white/10 hover:border-gold/50"} ${className}`} />;
+function Bet({ v, set, off }: { v: number; set: (n: number) => void; off?: boolean }) {
+  const { balance } = useCasino();
+  return <div className="space-y-2"><label className="text-xs uppercase tracking-widest text-white/50">Bet (credits)</label>
+    <input type="number" min={1} max={balance} value={v || ""} disabled={off} onChange={e => set(Math.floor(+e.target.value) || 0)} />
+    <div className="grid grid-cols-3 gap-2">
+      <Chip disabled={off} onClick={() => set(Math.max(1, Math.floor(v / 2)))}>½</Chip>
+      <Chip disabled={off} onClick={() => set(Math.min(balance, Math.max(1, v * 2)))}>2×</Chip>
+      <Chip disabled={off} onClick={() => set(balance)}>Max</Chip></div></div>;
+}
+const Shell = ({ title, icon, children }: { title: string; icon: string; children: ReactNode }) =>
+  <div className="mx-auto max-w-5xl px-4 py-8"><h1 className="mb-6 text-3xl font-bold text-gold">{icon} {title}</h1>
+    <div className="grid gap-6 md:grid-cols-[300px_1fr]">{children}</div></div>;
+
+
+const Msg = ({ children }: { children: React.ReactNode }) => <p key={String(children)} className="animate-pop mt-4 text-center text-lg font-bold text-gold">{children}</p>;
+
+/* ---------- SLOTS ---------- */
+const SYM = ["🍒", "🍋", "🔔", "⭐", "💎", "7️⃣"], MUL = [5, 8, 10, 15, 25, 50];
+function Slots() {
+  const { take, pay } = useCasino();
+  const [bet, setBet] = useState(100), [r, setR] = useState([0, 1, 2]), [busy, setBusy] = useState(false), [msg, setMsg] = useState("Place your bet and spin!");
+  const spin = () => {
+    if (busy || !take(bet)) return;
+    setBusy(true); setMsg("Spinning…");
+    const fin = [rand(6), rand(6), rand(6)];
+    const t = setInterval(() => setR([rand(6), rand(6), rand(6)]), 90);
+    setTimeout(() => {
+      clearInterval(t); setR(fin);
+      const [a, b, c] = fin; const m = a === b && b === c ? MUL[a] : a === b || b === c || a === c ? 1 : 0;
+      pay("Slots", bet, bet * m, `${fin.map(i => SYM[i]).join("")} ×${m}`);
+      setMsg(m > 1 ? `JACKPOT ×${m}! +${(bet * m - bet).toLocaleString()}` : m === 1 ? "Two of a kind — bet returned" : "No match");
+      setBusy(false);
+    }, 1200);
+  };
+  return <Shell title="Slots" icon="🎰"><Card className="space-y-4"><Bet v={bet} set={setBet} off={busy} /><Btn className="w-full" onClick={spin} disabled={busy}>{busy ? "Spinning…" : "SPIN"}</Btn>
+    <p className="text-xs text-white/40">3 match: 🍒5× 🍋8× 🔔10× ⭐15× 💎25× 7️⃣50× · 2 match: bet back</p></Card>
+    <Card><div className="flex justify-center gap-3">{r.map((s, i) => <div key={i} className={`flex h-28 w-24 items-center justify-center rounded-xl border-2 border-gold/50 bg-ink text-6xl ${busy ? "animate-pulse" : ""}`}>{SYM[s]}</div>)}</div><Msg>{msg}</Msg></Card></Shell>;
+}
+
+/* ---------- BLACKJACK ---------- */
+type PC = { r: string; s: string };
+const mkDeck = () => shuffle("♠♥♦♣".split("").flatMap(s => ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"].map(r => ({ r, s }))));
+const val = (h: PC[]) => { let t = 0, a = 0; for (const c of h) { if (c.r === "A") { a++; t += 11; } else t += ["J", "Q", "K", "10"].includes(c.r) ? 10 : +c.r; } while (t > 21 && a > 0) { t -= 10; a--; } return t; };
+const Face = ({ c, hide }: { c?: PC; hide?: boolean }) => <div className={`animate-pop flex h-24 w-16 flex-col items-center justify-center rounded-lg border-2 text-xl font-bold ${hide || !c ? "border-gold bg-plum text-gold" : "border-white/30 bg-white " + (c.s === "♥" || c.s === "♦" ? "text-red-600" : "text-black")}`}>{hide || !c ? "♠" : <><span>{c.r}</span><span>{c.s}</span></>}</div>;
+function Blackjack() {
+  const { take, pay } = useCasino();
+  const [bet, setBet] = useState(100);
+  const [g, setG] = useState({ deck: [] as PC[], p: [] as PC[], d: [] as PC[], bet: 0, phase: "bet", msg: "Place your bet and deal." });
+  const finish = (p: PC[], d: PC[], deck: PC[], b: number) => {
+    const dd = [...d], pv = val(p);
+    if (pv <= 21) while (val(dd) < 17) dd.push(deck.pop()!);
+    const dv = val(dd), bj = p.length === 2 && pv === 21; let out = 0, m = "Dealer wins";
+    if (pv > 21) m = "Bust — dealer wins";
+    else if (bj && !(dd.length === 2 && dv === 21)) { out = Math.floor(b * 2.5); m = "Blackjack! Pays 3:2"; }
+    else if (dv > 21 || pv > dv) { out = b * 2; m = dv > 21 ? "Dealer busts — you win!" : "You win!"; }
+    else if (pv === dv) { out = b; m = "Push"; }
+    pay("Blackjack", b, out, `${pv} vs ${dv}`);
+    setG({ deck, p, d: dd, bet: b, phase: "done", msg: m });
+  };
+  const deal = () => {
+    if (!take(bet)) return;
+    const deck = mkDeck(), p = [deck.pop()!, deck.pop()!], d = [deck.pop()!, deck.pop()!];
+    if (val(p) === 21) finish(p, d, deck, bet); else setG({ deck, p, d, bet, phase: "play", msg: "Your move." });
+  };
+  const hit = () => { const deck = [...g.deck], p = [...g.p, deck.pop()!]; if (val(p) >= 21) finish(p, g.d, deck, g.bet); else setG({ ...g, deck, p }); };
+  const dbl = () => { if (!take(g.bet)) return; const deck = [...g.deck]; finish([...g.p, deck.pop()!], g.d, deck, g.bet * 2); };
+  const play = g.phase === "play";
+  return <Shell title="Blackjack" icon="🃏"><Card className="space-y-4"><Bet v={bet} set={setBet} off={play} />
+    {!play ? <Btn className="w-full" onClick={deal}>DEAL</Btn> : <div className="grid grid-cols-3 gap-2"><Btn onClick={hit}>Hit</Btn><Btn onClick={() => finish(g.p, g.d, [...g.deck], g.bet)}>Stand</Btn><Btn onClick={dbl} disabled={g.p.length !== 2}>Double</Btn></div>}
+    <p className="text-xs text-white/40">Dealer stands on 17 · Blackjack pays 3:2</p></Card>
+    <Card className="space-y-5"><div><p className="mb-2 text-xs uppercase text-white/50">Dealer {g.phase === "done" ? `(${val(g.d)})` : ""}</p><div className="flex min-h-24 gap-2">{g.d.map((c, i) => <Face key={i} c={c} hide={play && i === 1} />)}</div></div>
+      <div><p className="mb-2 text-xs uppercase text-white/50">You {g.p.length ? `(${val(g.p)})` : ""}</p><div className="flex min-h-24 gap-2">{g.p.map((c, i) => <Face key={i} c={c} />)}</div></div><Msg>{g.msg}</Msg></Card></Shell>;
+}
+
+/* ---------- ROULETTE ---------- */
+const RED = [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36];
+const col = (n: number) => n === 0 ? "bg-green-600" : RED.includes(n) ? "bg-red-600" : "bg-zinc-800";
+const OPTS: [string, (n: number, p: number) => boolean, number][] = [["Red", n => RED.includes(n), 2], ["Black", n => n > 0 && !RED.includes(n), 2], ["Even", n => n > 0 && n % 2 === 0, 2], ["Odd", n => n % 2 === 1, 2], ["1–18", n => n >= 1 && n <= 18, 2], ["19–36", n => n >= 19, 2], ["Number", (n, p) => n === p, 36]];
+function Roulette() {
+  const { take, pay } = useCasino();
+  const [bet, setBet] = useState(100), [sel, setSel] = useState(0), [pick, setPick] = useState(7), [n, setN] = useState<number | null>(null), [busy, setBusy] = useState(false), [msg, setMsg] = useState("Choose a bet and spin.");
+  const spin = () => {
+    if (busy || !take(bet)) return;
+    setBusy(true); setMsg("No more bets…");
+    const fin = rand(37), t = setInterval(() => setN(rand(37)), 80);
+    setTimeout(() => {
+      clearInterval(t); setN(fin);
+      const [label, test, m] = OPTS[sel], w = test(fin, pick);
+      pay("Roulette", bet, w ? bet * m : 0, `${label}${sel === 6 ? " " + pick : ""} · landed ${fin}`);
+      setMsg(w ? `${fin} — you win ×${m}!` : `${fin} — house wins`); setBusy(false);
+    }, 1800);
+  };
+  return <Shell title="Roulette" icon="🎡"><Card className="space-y-4"><Bet v={bet} set={setBet} off={busy} />
+    <div className="grid grid-cols-2 gap-2">{OPTS.map((o, i) => <Chip key={o[0]} on={sel === i} disabled={busy} onClick={() => setSel(i)}>{o[0]} <span className="text-white/40">{o[2] - 1}:1</span></Chip>)}</div>
+    {sel === 6 && <input type="number" min={0} max={36} value={pick} disabled={busy} onChange={e => setPick(Math.min(36, Math.max(0, Math.floor(+e.target.value) || 0)))} />}
+    <Btn className="w-full" onClick={spin} disabled={busy}>SPIN</Btn></Card>
+    <Card className="flex flex-col items-center"><div className={`flex h-40 w-40 items-center justify-center rounded-full border-8 border-gold text-6xl font-black ${n === null ? "bg-ink" : col(n)} ${busy ? "animate-spin [animation-duration:.8s]" : ""}`}><span className={busy ? "animate-pulse" : ""}>{n ?? "?"}</span></div><Msg>{msg}</Msg></Card></Shell>;
+}
+
+/* ---------- COIN FLIP ---------- */
+function CoinFlip() {
+  const { take, pay } = useCasino();
+  const [bet, setBet] = useState(100), [side, setSide] = useState(0), [res, setRes] = useState<number | null>(null), [busy, setBusy] = useState(false), [msg, setMsg] = useState("Call it!");
+  const flip = () => {
+    if (busy || !take(bet)) return;
+    setBusy(true); setMsg("Flipping…");
+    const out = rand(2);
+    setTimeout(() => { setRes(out); const w = out === side; pay("Coin Flip", bet, w ? Math.floor(bet * 1.96) : 0, `${["Heads", "Tails"][side]} vs ${["Heads", "Tails"][out]}`); setMsg(w ? "You win ×1.96!" : "Wrong side"); setBusy(false); }, 1000);
+  };
+  return <Shell title="Coin Flip" icon="🪙"><Card className="space-y-4"><Bet v={bet} set={setBet} off={busy} />
+    <div className="grid grid-cols-2 gap-2"><Chip on={side === 0} disabled={busy} onClick={() => setSide(0)}>Heads</Chip><Chip on={side === 1} disabled={busy} onClick={() => setSide(1)}>Tails</Chip></div>
+    <Btn className="w-full" onClick={flip} disabled={busy}>FLIP</Btn></Card>
+    <Card className="flex flex-col items-center"><div className={`flex h-36 w-36 items-center justify-center rounded-full border-4 border-yellow-200 bg-gradient-to-br from-gold to-yellow-700 text-3xl font-black text-black ${busy ? "animate-flip" : ""}`}>{res === null ? "?" : res === 0 ? "H" : "T"}</div><Msg>{msg}</Msg></Card></Shell>;
+}
+
+/* ---------- DICE ---------- */
+function Dice() {
+  const { take, pay } = useCasino();
+  const [bet, setBet] = useState(100), [t, setT] = useState(50), [over, setOver] = useState(true), [roll, setRoll] = useState<number | null>(null), [busy, setBusy] = useState(false), [msg, setMsg] = useState("Set your odds and roll.");
+  const chance = over ? 100 - t : t - 1, mult = 98 / chance;
+  const go = () => {
+    if (busy || !take(bet)) return;
+    setBusy(true); const r = rand(100) + 1, iv = setInterval(() => setRoll(rand(100) + 1), 60);
+    setTimeout(() => {
+      clearInterval(iv); setRoll(r); const w = over ? r > t : r < t;
+      pay("Dice", bet, w ? Math.floor(bet * mult) : 0, `Roll ${over ? "over" : "under"} ${t} → ${r}`); setMsg(w ? `${r} — you win ×${mult.toFixed(2)}!` : `${r} — you lose`); setBusy(false);
+    }, 800);
+  };
+  return <Shell title="Dice" icon="🎲"><Card className="space-y-4"><Bet v={bet} set={setBet} off={busy} />
+    <div className="grid grid-cols-2 gap-2"><Chip on={over} disabled={busy} onClick={() => setOver(true)}>Roll Over</Chip><Chip on={!over} disabled={busy} onClick={() => setOver(false)}>Roll Under</Chip></div>
+    <div><label className="text-xs text-white/50">Target: {t}</label><input type="range" min={5} max={95} value={t} disabled={busy} onChange={e => setT(+e.target.value)} className="!p-0" /></div>
+    <p className="text-sm text-white/60">Win chance {chance}% · Payout ×{mult.toFixed(2)}</p><Btn className="w-full" onClick={go} disabled={busy}>ROLL</Btn></Card>
+    <Card className="flex flex-col items-center"><div className="flex h-36 w-36 items-center justify-center rounded-2xl border-4 border-gold bg-ink text-6xl font-black text-gold">{roll ?? "?"}</div>
+      <div className="relative mt-6 h-3 w-full rounded bg-white/10"><div className={`absolute h-3 rounded ${over ? "bg-green-500/70" : "bg-green-500/70"}`} style={over ? { left: `${t}%`, right: 0 } : { left: 0, width: `${t - 1}%` }} />{roll && <div className="absolute -top-1 h-5 w-1 bg-gold transition-all" style={{ left: `${roll}%` }} />}</div><Msg>{msg}</Msg></Card></Shell>;
+}
+
+/* ---------- MINES ---------- */
+const mineMult = (k: number, m: number) => { let x = 0.97; for (let i = 0; i < k; i++) x *= (25 - i) / (25 - m - i); return x; };
+function Mines() {
+  const { take, pay } = useCasino();
+  const [bet, setBet] = useState(100), [m, setM] = useState(3);
+  const [g, setG] = useState<{ bombs: number[]; open: number[]; over: boolean; bet: number } | null>(null), [msg, setMsg] = useState("Start a round, then reveal tiles.");
+  const live = !!g && !g.over, k = g?.open.length ?? 0;
+  const start = () => { if (!take(bet)) return; setG({ bombs: shuffle([...Array(25).keys()]).slice(0, m), open: [], over: false, bet }); setMsg("Pick a tile…"); };
+  const cash = (s = g!) => { const p = Math.floor(s.bet * mineMult(s.open.length, m)); pay("Mines", s.bet, p, `${m} mines · ${s.open.length} gems · ×${mineMult(s.open.length, m).toFixed(2)}`); setG({ ...s, over: true }); setMsg(`Cashed out ${p.toLocaleString()}!`); };
+  const click = (i: number) => {
+    if (!g || g.over || g.open.includes(i)) return;
+    if (g.bombs.includes(i)) { pay("Mines", g.bet, 0, `${m} mines · hit a mine after ${k} gems`); setG({ ...g, open: [...g.open, i], over: true }); setMsg("💥 Boom! You hit a mine."); return; }
+    const s = { ...g, open: [...g.open, i] }; setG(s);
+    if (s.open.length === 25 - m) cash(s); else setMsg(`Next tile pays ×${mineMult(s.open.length + 1, m).toFixed(2)}`);
+  };
+  return <Shell title="Mines" icon="💣"><Card className="space-y-4"><Bet v={bet} set={setBet} off={live} />
+    <div><label className="text-xs text-white/50">Mines</label><select value={m} disabled={live} onChange={e => setM(+e.target.value)}>{[1, 3, 5, 10, 15, 20, 24].map(x => <option key={x} value={x}>{x}</option>)}</select></div>
+    {live ? <Btn className="w-full" onClick={() => cash()} disabled={!k}>Cash out ×{mineMult(k, m).toFixed(2)}</Btn> : <Btn className="w-full" onClick={start}>START ROUND</Btn>}</Card>
+    <Card><div className="mx-auto grid max-w-sm grid-cols-5 gap-2">{[...Array(25).keys()].map(i => { const o = g?.open.includes(i), b = g?.bombs.includes(i), show = o || (g?.over && b);
+      return <button key={i} onClick={() => click(i)} disabled={!live} className={`aspect-square rounded-lg text-2xl transition ${show ? (b ? "bg-red-900" : "bg-green-900") + " animate-pop" : "bg-plum hover:bg-purple-800"}`}>{show ? (b ? "💣" : "💎") : ""}</button>; })}</div><Msg>{msg}</Msg></Card></Shell>;
+}
+
+const MAP: Record<string, () => JSX.Element> = { slots: Slots, blackjack: Blackjack, roulette: Roulette, coinflip: CoinFlip, dice: Dice, mines: Mines };
+function GameView({ slug }: { slug: string }) {
+  const { ready } = useCasino(); const G = MAP[slug];
+  if (!ready) return <div className="mx-auto max-w-5xl animate-pulse px-4 py-8"><div className="mb-6 h-9 w-48 rounded bg-white/10" /><div className="grid gap-6 md:grid-cols-[300px_1fr]"><div className="h-64 rounded-2xl bg-white/10" /><div className="h-64 rounded-2xl bg-white/10" /></div></div>;
+  return <G />;
+}
+
+const useHash = () => { const [h, setH] = useState(location.hash || "#/"); useEffect(() => { const f = () => { setH(location.hash || "#/"); window.scrollTo(0, 0); }; addEventListener("hashchange", f); return () => removeEventListener("hashchange", f); }, []); return h; };
+function Navbar() {
+  return <header className="sticky top-0 z-40 border-b border-gold/20 bg-ink/80 backdrop-blur"><div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-2 px-4 py-3">
+    <a href="#/" className="text-lg font-black tracking-wider text-gold">♠ ROYAL<span className="text-white">DEMO</span></a>
+    <nav className="flex items-center gap-4 text-sm"><a href="#/" className="hover:text-gold">Games</a><a href="#/history" className="hover:text-gold">History</a>
+      <span className="rounded-full border border-red-400/60 bg-red-500/10 px-2 py-0.5 text-xs font-bold text-red-300">DEMO</span>
+      <span className="rounded-xl border border-gold/40 bg-plum px-3 py-1 font-bold text-gold">🪙 <Balance /></span></nav></div></header>;
+}
+function Footer() {
+  return <footer className="mt-16 border-t border-gold/20 py-8 text-center text-xs text-white/50"><p className="font-bold text-gold">DEMO / PLAY MONEY</p>
+    <p className="mx-auto mt-2 max-w-xl px-4">This is a fictional play-money casino. Credits are virtual, have no monetary value, cannot be bought, withdrawn or exchanged, and no prizes are awarded. For entertainment and learning only.</p></footer>;
+}
+function Home() {
+  return <div className="mx-auto max-w-6xl px-4"><section className="py-16 text-center">
+    <span className="rounded-full border border-red-400/60 bg-red-500/10 px-3 py-1 text-xs font-bold tracking-widest text-red-300">DEMO / PLAY MONEY</span>
+    <h1 className="mt-6 text-5xl font-black md:text-7xl"><span className="bg-gradient-to-r from-gold via-yellow-200 to-gold bg-clip-text text-transparent">Royal Demo</span> Casino</h1>
+    <p className="mx-auto mt-4 max-w-xl text-white/60">Six polished games, zero risk. Play with virtual credits only — nothing here has monetary value.</p>
+    <p className="mt-6 text-2xl font-bold text-gold">🪙 <Balance /> credits</p>
+    <button onClick={() => document.getElementById("games")!.scrollIntoView({ behavior: "smooth" })} className="mt-6 rounded-xl bg-gradient-to-b from-gold to-yellow-700 px-8 py-3 font-bold text-black transition hover:scale-105">Start playing</button></section>
+    <section id="games" className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">{GAMES.map(g => <a key={g.slug} href={`#/play/${g.slug}`} className="group rounded-2xl border border-gold/20 bg-white/[0.04] p-6 transition hover:-translate-y-1 hover:border-gold hover:shadow-[0_0_30px_rgba(212,175,55,.25)]">
+      <div className="text-5xl transition group-hover:scale-110">{g.icon}</div><h2 className="mt-4 text-xl font-bold text-gold">{g.title}</h2><p className="mt-1 text-sm text-white/60">{g.desc}</p></a>)}</section></div>;
+}
+function History() {
+  const { ready, name, setName, history, reset, clear } = useCasino();
+  return <div className="mx-auto max-w-4xl space-y-6 px-4 py-8"><h1 className="text-3xl font-bold text-gold">Player &amp; History</h1>
+    <Card className="grid gap-4 sm:grid-cols-[1fr_auto_auto] sm:items-end"><div><label className="text-xs uppercase tracking-widest text-white/50">Demo username</label><input value={name} maxLength={20} onChange={e => setName(e.target.value)} /></div>
+      <Btn onClick={() => window.confirm("Reset balance to 10,000 and clear history?") && reset()}>Reset balance</Btn><Btn className="!bg-none !bg-white/10 !text-white" onClick={clear} disabled={!history.length}>Clear history</Btn></Card>
+    <Card>{!ready ? <div className="h-24 animate-pulse rounded bg-white/10" /> : !history.length ? <p className="py-10 text-center text-white/50">🎲 No rounds yet — play a game and your results will appear here.</p> :
+      <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead className="text-white/50"><tr><th className="p-2">Game</th><th>Details</th><th>Bet</th><th>Result</th><th>Time</th></tr></thead><tbody>{history.map(h => <tr key={h.id} className="border-t border-white/10"><td className="p-2">{h.game}</td><td>{h.note}</td><td>{h.bet.toLocaleString()}</td>
+        <td className={h.win > 0 ? "text-green-400" : h.win < 0 ? "text-red-400" : "text-white/60"}>{h.win > 0 ? "+" : ""}{h.win.toLocaleString()}</td><td className="text-white/40">{new Date(h.t).toLocaleTimeString()}</td></tr>)}</tbody></table></div>}</Card></div>;
+}
+function App() {
+  const h = useHash(), slug = h.startsWith("#/play/") ? h.slice(7) : "";
+  return <><div className="bg-red-600/90 py-1 text-center text-xs font-bold tracking-widest text-white">DEMO / PLAY MONEY — VIRTUAL CREDITS ONLY</div><Navbar />
+    <main>{slug && GAMES.some(g => g.slug === slug) ? <GameView slug={slug} /> : h === "#/history" ? <History /> : <Home />}</main><Footer /><Toasts /></>;
+}
+ReactDOM.createRoot(document.getElementById("root")!).render(<Provider><App /></Provider>);
+</script>
+<script>try{new Function(Babel.transform(document.getElementById("src").textContent,{presets:[["typescript",{isTSX:true,allExtensions:true}],"react"]}).code)()}catch(e){document.getElementById("root").innerHTML='<pre style="color:#f88;padding:2rem;white-space:pre-wrap">'+e+'</pre>'}</script>
+</body></html>
